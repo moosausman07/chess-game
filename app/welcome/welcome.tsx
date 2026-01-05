@@ -30,6 +30,7 @@ type SessionMessage = {
   status: GameStatus;
   players: PlayerSlot[];
   result?: GameResult;
+  colorRevealed?: boolean;
 };
 
 type MoveMessage = {
@@ -46,6 +47,7 @@ type PlayerChangeMessage = {
   gameId: string;
   players: PlayerSlot[];
   status: GameStatus;
+  colorRevealed?: boolean;
 };
 
 type EndMessage = {
@@ -126,8 +128,8 @@ export function Welcome() {
   const [gameId, setGameId] = useState("");
   const [pendingGameId, setPendingGameId] = useState("");
   const [playerName, setPlayerName] = useState("");
-  const [preferredColor, setPreferredColor] = useState<FigureColor>("white");
   const [assignedColor, setAssignedColor] = useState<FigureColor>();
+  const [colorRevealed, setColorRevealed] = useState(false);
   const [fen, setFen] = useState(START_FEN);
   const [players, setPlayers] = useState<PlayerSlot[]>(normalizePlayers());
   const [status, setStatus] = useState<GameStatus>("idle");
@@ -138,6 +140,7 @@ export function Welcome() {
 
   const chessRef = useRef(new Chess(START_FEN));
   const wsUrl = useMemo(getWebSocketUrl, []);
+  const autoJoinedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -166,6 +169,7 @@ export function Welcome() {
         case "session": {
           setGameId(message.gameId);
           setAssignedColor(message.color);
+          setColorRevealed(message.colorRevealed ?? false);
           setViewer(Boolean(message.viewer));
           syncChessToFen(message.fen || START_FEN);
           setLastMove(undefined);
@@ -186,6 +190,7 @@ export function Welcome() {
         case "player_left": {
           setPlayers(normalizePlayers(message.players));
           setStatus(message.status ?? "waiting");
+          setColorRevealed(message.colorRevealed ?? false);
           break;
         }
         case "ended": {
@@ -214,6 +219,22 @@ export function Welcome() {
     socket.onopen = () => {
       setConnectionState("open");
       setError(null);
+
+      // Auto-join if URL contains game ID
+      if (
+        pendingGameId &&
+        !gameId &&
+        !autoJoinedRef.current
+      ) {
+        autoJoinedRef.current = true;
+        socket.send(
+          JSON.stringify({
+            type: "join",
+            gameId: pendingGameId.trim(),
+            playerName: playerName || undefined,
+          }),
+        );
+      }
     };
     socket.onmessage = (event) => {
       try {
@@ -233,7 +254,7 @@ export function Welcome() {
     setWs(socket);
 
     return () => socket.close();
-  }, [handleServerMessage, wsUrl]);
+  }, [handleServerMessage, wsUrl, pendingGameId, gameId, playerName]);
 
   const activeColor = useMemo(() => getActiveColorFromFEN(fen), [fen]);
   const canMove =
@@ -260,7 +281,6 @@ export function Welcome() {
     const ok = send({
       type: "create",
       playerName: playerName || undefined,
-      preferredColor,
     });
     if (ok) {
       setResult(null);
@@ -277,7 +297,6 @@ export function Welcome() {
       type: "join",
       gameId: pendingGameId.trim(),
       playerName: playerName || undefined,
-      preferredColor,
     });
     if (ok) {
       setResult(null);
@@ -418,62 +437,46 @@ export function Welcome() {
                   />
                 </label>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      preferredColor === "white"
-                        ? "bg-white text-slate-900"
-                        : "bg-white/10 text-white hover:bg-white/20"
-                    }`}
-                    onClick={() => setPreferredColor("white")}
-                  >
-                    Play as White
-                  </button>
-                  <button
-                    className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      preferredColor === "black"
-                        ? "bg-white text-slate-900"
-                        : "bg-white/10 text-white hover:bg-white/20"
-                    }`}
-                    onClick={() => setPreferredColor("black")}
-                  >
-                    Play as Black
-                  </button>
-                </div>
-
                 <button
                   onClick={handleCreateGame}
                   className="rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/30 transition hover:translate-y-[-1px] hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-500/50"
                   disabled={connectionState !== "open"}
                 >
-                  Create a new game
+                  Play game
                 </button>
 
-                <div className="h-px w-full bg-white/10" />
-
-                <label className="text-sm text-slate-300">
-                  Join by game id
-                  <div className="mt-2 flex gap-2">
-                    <input
-                      value={pendingGameId}
-                      onChange={(e) => setPendingGameId(e.target.value)}
-                      placeholder="Paste game id"
-                      className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-white outline-none ring-emerald-500/40 focus:border-emerald-400"
-                    />
-                    <button
-                      onClick={handleJoinGame}
-                      className="rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:bg-white/10"
-                      disabled={connectionState !== "open"}
-                    >
-                      Join
-                    </button>
-                  </div>
-                </label>
-                {shareUrl && (
-                  <p className="text-xs text-slate-400">
-                    Share this link with a friend:{" "}
-                    <span className="break-all text-slate-200">{shareUrl}</span>
-                  </p>
+                {gameId ? (
+                  <>
+                    <div className="h-px w-full bg-white/10" />
+                    {shareUrl && (
+                      <p className="text-xs text-slate-400">
+                        Share this link with a friend:{" "}
+                        <span className="break-all text-slate-200">{shareUrl}</span>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="h-px w-full bg-white/10" />
+                    <label className="text-sm text-slate-300">
+                      Or join with link
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          value={pendingGameId}
+                          onChange={(e) => setPendingGameId(e.target.value)}
+                          placeholder="Paste game id or link"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-white outline-none ring-emerald-500/40 focus:border-emerald-400"
+                        />
+                        <button
+                          onClick={handleJoinGame}
+                          className="rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:bg-white/10"
+                          disabled={connectionState !== "open"}
+                        >
+                          Join
+                        </button>
+                      </div>
+                    </label>
+                  </>
                 )}
               </div>
             </div>
@@ -481,7 +484,7 @@ export function Welcome() {
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-lg shadow-black/30">
               <h3 className="mb-3 text-lg font-semibold text-white">Players</h3>
               <div className="space-y-2 text-sm text-slate-200">
-                {players.map((player) => (
+                {players.map((player, index) => (
                   <div
                     key={player.color}
                     className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2"
@@ -492,12 +495,25 @@ export function Welcome() {
                           player.connected ? "bg-emerald-400" : "bg-slate-500"
                         }`}
                       />
-                      <span className="capitalize font-semibold">
-                        {player.color}
-                      </span>
-                      <span className="text-slate-400">
-                        {player.name || "Open seat"}
-                      </span>
+                      {colorRevealed ? (
+                        <>
+                          <span className="capitalize font-semibold">
+                            {player.color}
+                          </span>
+                          <span className="text-slate-400">
+                            {player.name || "Open seat"}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="capitalize font-semibold">
+                            Player {index + 1}
+                          </span>
+                          <span className="text-slate-400">
+                            {player.name || (player.connected ? "Connected" : "Empty")}
+                          </span>
+                        </>
+                      )}
                     </div>
                     {assignedColor === player.color && !viewer && (
                       <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">

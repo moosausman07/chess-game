@@ -22,11 +22,11 @@ function getActiveColorFromFEN(fen) {
 }
 
 /**
- * @param {string} [preferred]
+ * Randomly choose between white and black
  * @returns {FigureColor}
  */
-function normalizeColor(preferred) {
-  return preferred === "black" ? "black" : "white";
+function randomColor() {
+  return Math.random() < 0.5 ? "white" : "black";
 }
 
 function createGameId() {
@@ -58,6 +58,34 @@ export function createGameServer(server, options = {}) {
 
   /** @type {Map<string, Game>} */
   const games = new Map();
+
+  /**
+   * @typedef {{ clientId: string; socket: import("ws").WebSocket; playerName?: string; timestamp: number }} QueueEntry
+   * @type {QueueEntry[]}
+   */
+  const matchmakingQueue = [];
+
+  /**
+   * Broadcast games list to all connected clients
+   */
+  const broadcastGamesList = () => {
+    const gamesList = Array.from(games.values())
+      .filter((g) => g.status === "active")
+      .map((g) => ({
+        id: g.id,
+        status: g.status,
+        fen: g.fen,
+        players: buildPlayers(g),
+        watcherCount: g.watchers.size,
+        moveCount: g.moves.length,
+      }));
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        safeSend(client, { type: "games_list", games: gamesList });
+      }
+    });
+  };
 
   /**
    * @param {Game} game
@@ -145,9 +173,116 @@ export function createGameServer(server, options = {}) {
         return;
       }
 
+      if (parsed.type === "queue") {
+        const queueEntry = {
+          clientId: client.id,
+          socket,
+          playerName: parsed.playerName,
+          timestamp: Date.now(),
+        };
+        matchmakingQueue.push(queueEntry);
+        client.inQueue = true;
+        client.gameId = undefined;
+
+        // Send initial queue position
+        safeSend(socket, {
+          type: "queue_status",
+          position: matchmakingQueue.length,
+          waiting: true,
+        });
+
+        // Try to match if 2+ players
+        if (matchmakingQueue.length >= 2) {
+          const player1 = matchmakingQueue.shift();
+          const player2 = matchmakingQueue.shift();
+
+          // Random color assignment
+          const p1Color = randomColor();
+          const p2Color = p1Color === "white" ? "black" : "white";
+
+          // Create game
+          const gameId = createGameId();
+          const game = {
+            id: gameId,
+            fen: START_FEN,
+            status: "active",
+            players: {
+              [p1Color]: {
+                id: player1.clientId,
+                socket: player1.socket,
+                color: p1Color,
+                name: player1.playerName,
+                gameId: gameId,
+              },
+              [p2Color]: {
+                id: player2.clientId,
+                socket: player2.socket,
+                color: p2Color,
+                name: player2.playerName,
+                gameId: gameId,
+              },
+            },
+            watchers: new Set(),
+            moves: [],
+            result: undefined,
+          };
+          games.set(gameId, game);
+
+          // Notify both players of match
+          safeSend(player1.socket, {
+            type: "matched",
+            gameId,
+            color: p1Color,
+            fen: START_FEN,
+            status: "active",
+            players: buildPlayers(game),
+            colorRevealed: true,
+          });
+
+          safeSend(player2.socket, {
+            type: "matched",
+            gameId,
+            color: p2Color,
+            fen: START_FEN,
+            status: "active",
+            players: buildPlayers(game),
+            colorRevealed: true,
+          });
+
+          // Broadcast game list update
+          broadcastGamesList();
+        }
+        return;
+      }
+
+      if (parsed.type === "cancel_queue") {
+        const index = matchmakingQueue.findIndex((e) => e.clientId === client.id);
+        if (index !== -1) {
+          matchmakingQueue.splice(index, 1);
+          client.inQueue = false;
+        }
+        safeSend(socket, { type: "queue_cancelled" });
+        return;
+      }
+
+      if (parsed.type === "list_games") {
+        const gamesList = Array.from(games.values())
+          .filter((g) => g.status === "active")
+          .map((g) => ({
+            id: g.id,
+            status: g.status,
+            fen: g.fen,
+            players: buildPlayers(g),
+            watcherCount: g.watchers.size,
+            moveCount: g.moves.length,
+          }));
+
+        safeSend(socket, { type: "games_list", games: gamesList });
+        return;
+      }
+
       if (parsed.type === "create") {
-        const color = normalizeColor(parsed.preferredColor);
-        const gameId = parsed.gameId || createGameId();
+        const gameId = createGameId();
         if (games.has(gameId)) {
           safeSend(socket, { type: "error", message: "Game already exists" });
           return;
@@ -162,19 +297,21 @@ export function createGameServer(server, options = {}) {
           result: undefined,
         };
 
-        game.players[color] = { ...client, color, name: parsed.playerName };
-        client.color = color;
+        // Don't assign color yet - just add as first player
         client.gameId = gameId;
         client.name = parsed.playerName;
+        // Store client temporarily, color will be assigned when second player joins
+        client.tempSlot = true;
+
         games.set(gameId, game);
 
         safeSend(socket, {
           type: "session",
           gameId,
-          color,
           fen: game.fen,
           status: game.status,
           players: buildPlayers(game),
+          colorRevealed: false,
         });
         return;
       }
@@ -186,27 +323,40 @@ export function createGameServer(server, options = {}) {
           return;
         }
 
-        const preferredColor = normalizeColor(parsed.preferredColor);
-        const slotIsFree = (color) => !game.players[color];
-        let assignedColor;
-        if (preferredColor && slotIsFree(preferredColor)) {
-          assignedColor = preferredColor;
-        } else if (slotIsFree("white")) {
-          assignedColor = "white";
-        } else if (slotIsFree("black")) {
-          assignedColor = "black";
-        }
-
         client.gameId = game.id;
         client.name = parsed.playerName;
 
-        if (assignedColor) {
+        const slotIsFree = (color) => !game.players[color];
+        const emptySlots = [];
+        if (slotIsFree("white")) emptySlots.push("white");
+        if (slotIsFree("black")) emptySlots.push("black");
+
+        let assignedColor;
+        if (emptySlots.length === 2) {
+          // This is the first player joining via the link - place them in a temp slot
+          client.viewer = false;
+          client.tempSlot = true;
+        } else if (emptySlots.length === 1) {
+          // Second player joining - assign both players their colors now
+          assignedColor = emptySlots[0];
           client.color = assignedColor;
           client.viewer = false;
           game.players[assignedColor] = { ...client };
-          game.status =
-            game.players.white && game.players.black ? "active" : "waiting";
+
+          // Find the first player (in tempSlot) and assign them the other color
+          const otherColor = assignedColor === "white" ? "black" : "white";
+          const firstPlayer = Object.values(game.players).find(
+            (p) => p && p.tempSlot,
+          );
+          if (firstPlayer) {
+            firstPlayer.color = otherColor;
+            firstPlayer.tempSlot = false;
+            game.players[otherColor] = firstPlayer;
+          }
+
+          game.status = "active";
         } else {
+          // Both slots full - become a spectator
           client.viewer = true;
           game.watchers.add(socket);
         }
@@ -220,6 +370,7 @@ export function createGameServer(server, options = {}) {
           status: game.status,
           players: buildPlayers(game),
           result: game.result,
+          colorRevealed: game.status === "active",
         });
 
         broadcast(
@@ -229,6 +380,7 @@ export function createGameServer(server, options = {}) {
             gameId: game.id,
             players: buildPlayers(game),
             status: game.status,
+            colorRevealed: game.status === "active",
           },
           socket,
         );
@@ -295,6 +447,15 @@ export function createGameServer(server, options = {}) {
     });
 
     socket.on("close", () => {
+      // Remove from queue if in queue
+      if (client.inQueue) {
+        const queueIndex = matchmakingQueue.findIndex((e) => e.clientId === client.id);
+        if (queueIndex !== -1) {
+          matchmakingQueue.splice(queueIndex, 1);
+        }
+      }
+
+      // Remove from game if in game
       removeClientFromGame(client);
     });
   });
