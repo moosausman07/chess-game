@@ -9,6 +9,7 @@ import { createGameServer } from "./game-server.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BUILD_DIR = path.join(__dirname, "..", "build");
+const WS_PATH = process.env.WS_PATH || "/ws";
 
 const app = express();
 
@@ -36,9 +37,11 @@ app.all(
 );
 
 const server = http.createServer(app);
-createGameServer(server, { path: "/ws" });
+createGameServer(server, { path: WS_PATH });
 
 const port = Number(process.env.PORT || 3000);
 server.listen(port, () => {
-  console.log(`HTTP + WebSocket server listening on http://localhost:${port}`);
+  console.log(
+    `HTTP + WebSocket server listening on http://localhost:${port} (ws path ${WS_PATH})`,
+  );
 });

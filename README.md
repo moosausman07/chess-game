@@ -38,6 +38,15 @@ npm start            # serves HTTP + WebSocket on PORT (default 3000)
 ```
 Built assets live in `build/client`; the server entry is `build/server/index.js`, which `server/index.js` wraps with Express plus the WebSocket hub.
 
+## Deploy (combined HTTP + WebSocket on one host)
+Render example (free tier works for testing):
+1) Create a new **Web Service** from this repo.
+2) Environment: Node 20+.
+3) Build command: `npm install && npm run build`
+4) Start command: `npm start`
+5) Env vars: `NODE_ENV=production`; optionally `WS_PATH=/ws` (defaults to `/ws`).
+6) After deploy, your app is at `https://<app>.onrender.com`; the socket is `wss://<app>.onrender.com/ws`. On Vercel (or any separate frontend), set `VITE_WS_URL` to that socket URL.
+
 ## How to play
 1) Open the app, choose a color, click “Create a new game”.  
 2) Copy the provided link (or game id) and share it with a friend.  
@@ -46,7 +55,9 @@ Built assets live in `build/client`; the server entry is `build/server/index.js`
 
 ## Configuration
 - `VITE_WS_URL`: Override the WebSocket endpoint for the client (default uses current origin or `ws://localhost:3001/ws` in dev).
+- `VITE_WS_PATH`: Override just the WebSocket path (defaults to `/ws` when building the URL automatically).
 - `WS_PORT`: Port for the standalone WebSocket server when running `npm run ws` (default 3001).
+- `WS_PATH`: WebSocket path for the combined server (default `/ws`).
 - `PORT`: HTTP port for `npm start` (default 3000). The WebSocket path remains `/ws`.
 
 ## Tech stack

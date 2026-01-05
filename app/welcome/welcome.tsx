@@ -99,19 +99,22 @@ function getWebSocketUrl() {
   const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
   if (envUrl) return envUrl;
 
+  const envPath = (import.meta.env as { VITE_WS_PATH?: string }).VITE_WS_PATH;
+  const path = envPath || WS_PATH;
+
   const devDefault = import.meta.env.DEV
-    ? `ws://localhost:3001${WS_PATH}`
+    ? `ws://localhost:3001${path}`
     : undefined;
 
   if (typeof window === "undefined") {
-    return devDefault || `ws://localhost:3001${WS_PATH}`;
+    return devDefault || `ws://localhost:3001${path}`;
   }
 
   if (devDefault) return devDefault;
 
   const url = new URL(window.location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = WS_PATH;
+  url.pathname = path;
   return url.toString();
 }
 
