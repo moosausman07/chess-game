@@ -1,4 +1,4 @@
-# Chess Game (React Router + WebSockets)
+# Chesslyte - A chess game in react
 
 Play live chess with a friend: create a table, share a link, and the board stays in sync over WebSockets. The UI is built with React Router, `react-chessboard`, and `chess.js` for move validation; the backend is a small Express server with a WebSocket hub.
 
