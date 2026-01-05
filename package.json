@@ -5,16 +5,21 @@
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
-    "start": "react-router-serve ./build/server/index.js",
+    "start": "node ./server/index.js",
+    "ws": "node ./server/game-server.js",
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
     "@react-router/node": "7.10.1",
     "@react-router/serve": "7.10.1",
+    "chess.js": "^1.0.0",
+    "express": "^4.21.2",
     "isbot": "^5.1.31",
     "react": "^19.2.3",
+    "react-chessboard": "^5.8.6",
     "react-dom": "^19.2.3",
-    "react-router": "7.10.1"
+    "react-router": "7.10.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@react-router/dev": "7.10.1",
