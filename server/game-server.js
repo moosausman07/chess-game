@@ -308,8 +308,21 @@ export function createGameServer(server, options = {}) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const port = Number(process.env.WS_PORT || 3001);
+  const cliPort = process.argv[2];
+  const port = Number(cliPort || process.env.WS_PORT || 3001);
   const server = http.createServer();
+
+  server.on("error", (err) => {
+    if (/** @type {any} */ (err).code === "EADDRINUSE") {
+      console.error(
+        `Port ${port} is already in use. Set WS_PORT to another port, ` +
+          `e.g. WS_PORT=${port + 1} npm run ws`,
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
+
   server.listen(port, () => {
     console.log(
       `Standalone WebSocket server running on ws://localhost:${port}/ws`,

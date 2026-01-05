@@ -46,6 +46,7 @@ Built assets live in `build/client`; the server entry is `build/server/index.js`
 
 ## Configuration
 - `VITE_WS_URL`: Override the WebSocket endpoint for the client (default uses current origin or `ws://localhost:3001/ws` in dev).
+- `WS_PORT`: Port for the standalone WebSocket server when running `npm run ws` (default 3001).
 - `PORT`: HTTP port for `npm start` (default 3000). The WebSocket path remains `/ws`.
 
 ## Tech stack
