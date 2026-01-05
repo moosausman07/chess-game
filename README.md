@@ -1,87 +1,68 @@
-# Welcome to React Router!
+# Chess Game (React Router + WebSockets)
 
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+Play live chess with a friend: create a table, share a link, and the board stays in sync over WebSockets. The UI is built with React Router, `react-chessboard`, and `chess.js` for move validation; the backend is a small Express server with a WebSocket hub.
 
 ## Features
+- Real-time multiplayer: create/join by game id; spectators see live updates.
+- Drag-and-drop board powered by `react-chessboard`, oriented to your color.
+- Server-side move sync (FEN-based) and turn enforcement.
+- Shareable join link (`?game=<id>`), last-move highlights, online status badges.
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+## Prerequisites
+- Node.js 20+ (the template targets Node 20+; tested with Node 24).
+- npm (comes with Node).
 
-## Getting Started
-
-### Installation
-
-Install the dependencies:
-
+## Install
 ```bash
 npm install
 ```
 
-### Development
-
-Start the development server with HMR:
-
+## Running in development
+Start the WebSocket server and the client separately:
 ```bash
+# Terminal 1: WebSocket hub (ws://localhost:3001/ws)
+npm run ws
+
+# Terminal 2: React dev server with HMR (http://localhost:5173)
 npm run dev
 ```
-
-Your application will be available at `http://localhost:5173`.
-
-## Building for Production
-
-Create a production build:
-
+If your socket URL differs, set `VITE_WS_URL` when starting the client, e.g.:
 ```bash
-npm run build
+VITE_WS_URL=ws://localhost:3001/ws npm run dev
 ```
 
-## Deployment
-
-### Docker Deployment
-
-To build and run using Docker:
-
+## Production build & serve
 ```bash
-docker build -t my-app .
+npm run build        # bundles client + server
+npm start            # serves HTTP + WebSocket on PORT (default 3000)
+```
+Built assets live in `build/client`; the server entry is `build/server/index.js`, which `server/index.js` wraps with Express plus the WebSocket hub.
 
-# Run the container
-docker run -p 3000:3000 my-app
+## How to play
+1) Open the app, choose a color, click “Create a new game”.  
+2) Copy the provided link (or game id) and share it with a friend.  
+3) The opponent clicks “Join” and pastes the id.  
+4) Moves are validated locally by `chess.js` and broadcast to all connected clients. Only the side to move can drag pieces.
+
+## Configuration
+- `VITE_WS_URL`: Override the WebSocket endpoint for the client (default uses current origin or `ws://localhost:3001/ws` in dev).
+- `PORT`: HTTP port for `npm start` (default 3000). The WebSocket path remains `/ws`.
+
+## Tech stack
+- React Router v7 (SSR template), Vite dev server
+- `react-chessboard` for UI, `chess.js` for rules/FEN
+- Express + `ws` for WebSocket signaling
+
+## Testing / type-check
+```bash
+npm run typecheck
 ```
 
-The containerized application can be deployed to any platform that supports Docker, including:
+## Folder map (top-level)
+- `app/` — React Router routes/components (see `app/welcome/welcome.tsx`).
+- `server/` — Express wrapper and WebSocket hub (`server/index.js`, `server/game-server.js`).
+- `build/` — Generated on `npm run build`.
 
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+## Notes
+- Game state is in-memory on the WebSocket server; restarting it clears active games.
+- No user auth or persistence is included; share the link only with people you trust.***
